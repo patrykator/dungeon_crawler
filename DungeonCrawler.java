@@ -32,6 +32,11 @@ public class DungeonCrawler extends JPanel {
         });
     }
 
+    private void restartGame() {
+        generateDungeon();
+        repaint();
+    }
+
     private void generateDungeon() {
         dungeon = new char[HEIGHT][WIDTH];
         for (int y = 0; y < HEIGHT; y++) {
@@ -51,6 +56,8 @@ public class DungeonCrawler extends JPanel {
         int[][] directions = {
                 {0, 1}, {1, 0}, {0, -1}, {-1, 0}
         };
+
+
 
         while (!stack.isEmpty()) {
             int[] current = stack.peek();
@@ -119,7 +126,10 @@ public class DungeonCrawler extends JPanel {
 
             if (playerX == goalX && playerY == goalY) {
                 gameWon = true;
-                JOptionPane.showMessageDialog(this, "You won!");
+                int option = JOptionPane.showConfirmDialog(this, "You won! Do you want to play again?", "Congratulations", JOptionPane.YES_NO_OPTION);
+                if (option == JOptionPane.YES_OPTION) {
+                    restartGame();
+                }
             } else {
                 dungeon[playerY][playerX] = 'P';
             }
