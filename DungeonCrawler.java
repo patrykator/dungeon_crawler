@@ -3,6 +3,7 @@ import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.*;
+import java.util.List;
 
 public class DungeonCrawler extends JPanel {
 
@@ -11,6 +12,7 @@ public class DungeonCrawler extends JPanel {
     private static final int HEIGHT = 24; // 16:9 ratio for larger size
     private static final int FLOORS = 5; // Zmiana na 5 pięter
     private static final int PLAYER_START_FLOOR = 2; // Gracz zaczyna na 3. piętrze
+    private static final int LEGEND_WIDTH = 200;
 
     private char[][][] dungeons;
     private int currentFloor;
@@ -18,30 +20,55 @@ public class DungeonCrawler extends JPanel {
     private int goalX, goalY;
     private boolean gameWon;
     private boolean onStairTile;
+    private boolean autoPlay;
+    private Queue<int[]> autoPath;
 
     public DungeonCrawler() {
-        setPreferredSize(new Dimension(WIDTH * TILE_SIZE, HEIGHT * TILE_SIZE));
+        setPreferredSize(new Dimension((WIDTH * TILE_SIZE) + LEGEND_WIDTH, HEIGHT * TILE_SIZE));
         setBackground(Color.BLACK);
         generateDungeons();
         setFocusable(true);
         addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_SPACE) {
-                    if (onStairTile) {
-                        changeFloor();
+                if (!autoPlay) {
+                    if (e.getKeyCode() == KeyEvent.VK_SPACE) {
+                        if (onStairTile) {
+                            changeFloor();
+                        }
+                    } else {
+                        movePlayer(e.getKeyCode());
                     }
-                } else {
-                    movePlayer(e.getKeyCode());
+                    repaint();
                 }
-                repaint();
             }
         });
+
+        // Zapytaj gracza czy chce grać ręcznie, czy automatycznie
+        int option = JOptionPane.showOptionDialog(this,
+                "Wybierz tryb gry",
+                "Dungeon Crawler",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                new Object[]{"Manual", "Auto"},
+                "Manual");
+
+        autoPlay = (option == 1);
+
+        if (autoPlay) {
+            autoPath = findShortestPathToGoal();
+            autoPlayGame();
+        }
     }
 
     private void restartGame() {
         generateDungeons();
         repaint();
+        if (autoPlay) {
+            autoPath = findShortestPathToGoal();
+            autoPlayGame();
+        }
     }
 
     private void generateDungeons() {
@@ -89,7 +116,7 @@ public class DungeonCrawler extends JPanel {
 
         while (!stack.isEmpty()) {
             int[] current = stack.peek();
-            java.util.List<int[]> neighbors = new ArrayList<>();
+            List<int[]> neighbors = new ArrayList<>();
 
             for (int[] dir : directions) {
                 int nx = current[0] + dir[0] * 2;
@@ -214,10 +241,7 @@ public class DungeonCrawler extends JPanel {
 
             if (destination == 'G') {
                 gameWon = true;
-                int option = JOptionPane.showConfirmDialog(this, "You won! Do you want to play again?", "Congratulations", JOptionPane.YES_NO_OPTION);
-                if (option == JOptionPane.YES_OPTION) {
-                    restartGame();
-                }
+                showVictoryDialog();
             }
 
             if (!onStairTile) {
@@ -228,47 +252,198 @@ public class DungeonCrawler extends JPanel {
 
     private void changeFloor() {
         char tile = dungeons[currentFloor][playerY][playerX];
-        if (tile == 'U' && currentFloor > 0) {
-            dungeons[currentFloor][playerY][playerX] = (dungeons[currentFloor][playerY][playerX] == 'U') ? 'U' : 'D';
-            currentFloor--;
-            moveToFloor(currentFloor);
-            System.out.println("Zmieniono piętro na: " + currentFloor);
-            System.out.println("Nowa pozycja gracza: (" + playerX + ", " + playerY + ")");
-        } else if (tile == 'D' && currentFloor < FLOORS - 1) {
-            dungeons[currentFloor][playerY][playerX] = (dungeons[currentFloor][playerY][playerX] == 'U') ? 'U' : 'D';
+        if (tile == 'U' && currentFloor < FLOORS - 1) {
             currentFloor++;
-            moveToFloor(currentFloor);
-            System.out.println("Zmieniono piętro na: " + currentFloor);
-            System.out.println("Nowa pozycja gracza: (" + playerX + ", " + playerY + ")");
+        } else if (tile == 'D' && currentFloor > 0) {
+            currentFloor--;
         }
 
-        // Aktualizuj flagę onStairTile na podstawie nowej pozycji gracza
-        if (dungeons[currentFloor][playerY][playerX] == 'U' || dungeons[currentFloor][playerY][playerX] == 'D') {
-            onStairTile = true;
-        } else {
-            onStairTile = false;
+        do {
+            playerX = new Random().nextInt(WIDTH);
+            playerY = new Random().nextInt(HEIGHT);
+        } while (dungeons[currentFloor][playerY][playerX] == '#');
+        onStairTile = false;
+        dungeons[currentFloor][playerY][playerX] = 'P';
+        System.out.println("Nowe piętro: " + currentFloor);
+        repaint();
+
+        if (autoPlay) {
+            autoPath = findShortestPathToGoal();
         }
     }
 
-    private void moveToFloor(int floor) {
-        for (int y = 0; y < HEIGHT; y++) {
-            for (int x = 0; x < WIDTH; x++) {
-                if (dungeons[floor][y][x] == 'P') {
-                    playerX = x;
-                    playerY = y;
-                    return;
+    private Queue<int[]> findShortestPathToGoal() {
+        Queue<int[]> path = new LinkedList<>();
+        boolean[][] visited = new boolean[HEIGHT][WIDTH];
+        int[][][] parent = new int[HEIGHT][WIDTH][2];
+
+        Queue<int[]> queue = new LinkedList<>();
+        queue.add(new int[]{playerX, playerY});
+        visited[playerY][playerX] = true;
+        boolean goalFound = false;
+        boolean stairFound = false;
+
+        int[][] directions = {
+                {0, 1}, {1, 0}, {0, -1}, {-1, 0}
+        };
+
+        int stairX = -1;
+        int stairY = -1;
+
+        while (!queue.isEmpty() && !goalFound) {
+            int[] current = queue.poll();
+            int x = current[0];
+            int y = current[1];
+
+            for (int[] dir : directions) {
+                int nx = x + dir[0];
+                int ny = y + dir[1];
+
+                if (nx >= 0 && nx < WIDTH && ny >= 0 && ny < HEIGHT && !visited[ny][nx] && dungeons[currentFloor][ny][nx] != '#') {
+                    queue.add(new int[]{nx, ny});
+                    visited[ny][nx] = true;
+                    parent[ny][nx][0] = x;
+                    parent[ny][nx][1] = y;
+
+                    if (dungeons[currentFloor][ny][nx] == 'G') {
+                        goalFound = true;
+                        goalX = nx;
+                        goalY = ny;
+                        break;
+                    } else if (!stairFound && dungeons[currentFloor][ny][nx] == 'U') {
+                        stairFound = true;
+                        stairX = nx;
+                        stairY = ny;
+                    }
                 }
             }
+        }
+
+        int cx, cy;
+
+        if (goalFound) {
+            cx = goalX;
+            cy = goalY;
+        } else if (stairFound) {
+            cx = stairX;
+            cy = stairY;
+        } else {
+            return path; // Empty path if no goal or stairs found
+        }
+
+        while (cx != playerX || cy != playerY) {
+            path.add(new int[]{cx, cy, currentFloor});
+            int px = parent[cy][cx][0];
+            int py = parent[cy][cx][1];
+            cx = px;
+            cy = py;
+        }
+        Collections.reverse((LinkedList<int[]>) path); // Reverse the path to start from the player
+        return path;
+    }
+
+    private void autoPlayGame() {
+        if (autoPath == null || autoPath.isEmpty()) {
+            return;
+        }
+
+        javax.swing.Timer timer = new javax.swing.Timer(100, e -> {
+            if (autoPath.isEmpty()) {
+                ((javax.swing.Timer) e.getSource()).stop();
+                if (gameWon) {
+                    showVictoryDialog();
+                } else {
+                    showGameOverDialog();
+                }
+                return;
+            }
+
+            int[] nextStep = autoPath.poll();
+            if (nextStep.length != 3) {
+                return;
+            }
+
+            int nextX = nextStep[0];
+            int nextY = nextStep[1];
+            int nextFloor = nextStep[2];
+
+            if (nextFloor != currentFloor) {
+                changeFloor();
+                autoPath = findShortestPathToGoal(); // Recalculate path after changing floor
+                return;
+            }
+
+            playerX = nextX;
+            playerY = nextY;
+            char currentTile = dungeons[currentFloor][playerY][playerX];
+            onStairTile = (currentTile == 'U' || currentTile == 'D');
+
+            if (onStairTile && !gameWon) {
+                changeFloor(); // Simulate pressing space
+                autoPath = findShortestPathToGoal(); // Recalculate path after changing floor
+                return;
+            }
+
+            if (!onStairTile) {
+                dungeons[currentFloor][playerY][playerX] = 'P';
+            }
+
+            repaint();
+            if (gameWon || autoPath.isEmpty()) {
+                ((javax.swing.Timer) e.getSource()).stop();
+                if (gameWon) {
+                    showVictoryDialog();
+                } else {
+                    showGameOverDialog();
+                }
+            }
+        });
+        timer.start();
+    }
+
+    private void showGameOverDialog() {
+        int option = JOptionPane.showOptionDialog(this,
+                "You have reached the end of the auto path. Do you want to play again?",
+                "Game Over",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.INFORMATION_MESSAGE,
+                null,
+                new Object[]{"Yes", "No"},
+                "Yes");
+
+        if (option == JOptionPane.YES_OPTION) {
+            restartGame();
+        } else {
+            System.exit(0);
+        }
+    }
+
+
+    private void showVictoryDialog() {
+        int option = JOptionPane.showOptionDialog(this,
+                "Congratulations! You've reached the goal. Do you want to play again?",
+                "Victory!",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.INFORMATION_MESSAGE,
+                null,
+                new Object[]{"Yes", "No"},
+                "Yes");
+
+        if (option == JOptionPane.YES_OPTION) {
+            restartGame();
+        } else {
+            System.exit(0);
         }
     }
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        char[][] dungeon = dungeons[currentFloor];
+
+        // Draw dungeon tiles
         for (int y = 0; y < HEIGHT; y++) {
             for (int x = 0; x < WIDTH; x++) {
-                switch (dungeon[y][x]) {
+                switch (dungeons[currentFloor][y][x]) {
                     case '#':
                         g.setColor(Color.DARK_GRAY);
                         break;
@@ -276,38 +451,85 @@ public class DungeonCrawler extends JPanel {
                         g.setColor(Color.LIGHT_GRAY);
                         break;
                     case 'P':
-                        g.setColor(Color.RED);
+                        g.setColor(Color.BLUE);
                         break;
                     case 'G':
                         g.setColor(Color.GREEN);
+                        break;
+                    case 'U':
+                        g.setColor(Color.ORANGE); // Stairs up in orange
+                        break;
+                    case 'D':
+                        g.setColor(Color.PINK); // Stairs down in pink
                         break;
                 }
                 g.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             }
         }
 
-        // Rysowanie pól przejścia niezależnie od obecnej lokalizacji gracza
-        for (int y = 0; y < HEIGHT; y++) {
-            for (int x = 0; x < WIDTH; x++) {
-                if (dungeon[y][x] == 'U' || dungeon[y][x] == 'D') {
-                    g.setColor((dungeon[y][x] == 'U') ? Color.CYAN : Color.MAGENTA);
-                    g.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                }
-            }
-        }
+        // Draw floor counter
+        drawFloorCounter(g);
 
-        // Indicate current floor
+        // Draw legend
+        drawLegend(g);
+    }
+
+    private void drawFloorCounter(Graphics g) {
+        int legendX = WIDTH * TILE_SIZE + 10;
         g.setColor(Color.WHITE);
-        g.drawString("Floor: " + (currentFloor + 1), 10, 10);
+        g.setFont(new Font("Arial", Font.BOLD, 25));
+        g.drawString("Current Floor: " + (currentFloor + 1), legendX, 300); // Display the current floor at the top-left corner
+    }
+
+    private void drawLegend(Graphics g) {
+        int legendX = WIDTH * TILE_SIZE + 10;
+
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.BOLD, 16));
+        g.drawString("Legend", legendX, 20);
+
+        g.setColor(Color.DARK_GRAY);
+        g.fillRect(legendX, 40, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Wall", legendX + TILE_SIZE + 10, 60);
+
+        g.setColor(Color.LIGHT_GRAY);
+        g.fillRect(legendX, 80, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.BLACK);
+        g.drawString("Path", legendX + TILE_SIZE + 10, 100);
+
+        g.setColor(Color.BLUE);
+        g.fillRect(legendX, 120, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Player", legendX + TILE_SIZE + 10, 140);
+
+        g.setColor(Color.GREEN);
+        g.fillRect(legendX, 160, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Goal", legendX + TILE_SIZE + 10, 180);
+
+        g.setColor(Color.ORANGE);
+        g.fillRect(legendX, 200, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Stairs Up", legendX + TILE_SIZE + 10, 220);
+
+        g.setColor(Color.PINK);
+        g.fillRect(legendX, 240, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Stairs Down", legendX + TILE_SIZE + 10, 260);
     }
 
     public static void main(String[] args) {
-        JFrame frame = new JFrame("Dungeon Crawler");
-        DungeonCrawler game = new DungeonCrawler();
-        frame.add(game);
-        frame.pack();
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setVisible(true);
+        SwingUtilities.invokeLater(() -> {
+            JFrame frame = new JFrame("Dungeon Crawler");
+            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            frame.setResizable(false);
+
+            DungeonCrawler game = new DungeonCrawler();
+            frame.add(game);
+            frame.pack();
+            frame.setLocationRelativeTo(null);
+            frame.setVisible(true);
+        });
     }
 }
-
