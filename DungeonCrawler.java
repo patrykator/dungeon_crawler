@@ -77,9 +77,10 @@ public class DungeonCrawler extends JPanel {
     private void generateDungeons() {
         dungeons = new char[FLOORS][HEIGHT][WIDTH];
         Random rand = new Random();
+        int goalFloor = rand.nextInt(FLOORS); // Randomly select a floor for the goal
 
         for (int f = 0; f < FLOORS; f++) {
-            generateDungeon(dungeons[f], f == FLOORS - 1);
+            generateDungeon(dungeons[f], f == goalFloor);
         }
 
         // Add stairs between floors
@@ -101,6 +102,7 @@ public class DungeonCrawler extends JPanel {
         gameWon = false;
         onStairTile = false;
     }
+
 
     private List<int[]> findDeadEnds(char[][] dungeon) {
         List<int[]> deadEnds = new ArrayList<>();
@@ -179,15 +181,26 @@ public class DungeonCrawler extends JPanel {
         Random rand = new Random();
         List<int[]> currentDeadEnds = findDeadEnds(currentDungeon);
 
-        int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
-        currentDungeon[downStairs[1]][downStairs[0]] = 'D';
+        if (nextDungeon == null) {
+            // Last floor, only add down stairs
+            int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+            currentDungeon[downStairs[1]][downStairs[0]] = 'D';
+        } else if (currentDungeon == dungeons[0]) {
+            // First floor, only add up stairs
+            int[] upStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+            currentDungeon[upStairs[1]][upStairs[0]] = 'U';
+        } else {
+            // General case, add both up and down stairs
+            int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+            currentDungeon[downStairs[1]][downStairs[0]] = 'D';
 
-        if (!isLastFloor) {
             List<int[]> nextDeadEnds = findDeadEnds(nextDungeon);
             int[] upStairs = nextDeadEnds.get(rand.nextInt(nextDeadEnds.size()));
             nextDungeon[upStairs[1]][upStairs[0]] = 'U';
         }
     }
+
+
 
 
 
@@ -316,73 +329,73 @@ public class DungeonCrawler extends JPanel {
 
     private Queue<int[]> findShortestPathToGoal() {
         Queue<int[]> path = new LinkedList<>();
-        boolean[][] visited = new boolean[HEIGHT][WIDTH];
-        int[][][] parent = new int[HEIGHT][WIDTH][2];
+        boolean[][][] visited = new boolean[FLOORS][HEIGHT][WIDTH];
+        int[][][][] parent = new int[FLOORS][HEIGHT][WIDTH][2]; // Corrected parent array definition
+        int[][] directions = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
 
         Queue<int[]> queue = new LinkedList<>();
-        queue.add(new int[]{playerX, playerY});
-        visited[playerY][playerX] = true;
+        queue.add(new int[] {playerX, playerY, currentFloor});
+        visited[currentFloor][playerY][playerX] = true;
         boolean goalFound = false;
-        boolean stairFound = false;
-
-        int[][] directions = {
-                {0, 1}, {1, 0}, {0, -1}, {-1, 0}
-        };
-
-        int stairX = -1;
-        int stairY = -1;
+        int goalFloor = -1, goalX = -1, goalY = -1;
 
         while (!queue.isEmpty() && !goalFound) {
             int[] current = queue.poll();
-            int x = current[0];
-            int y = current[1];
+            int x = current[0], y = current[1], floor = current[2];
 
             for (int[] dir : directions) {
                 int nx = x + dir[0];
                 int ny = y + dir[1];
 
-                if (nx >= 0 && nx < WIDTH && ny >= 0 && ny < HEIGHT && !visited[ny][nx] && dungeons[currentFloor][ny][nx] != '#') {
-                    queue.add(new int[]{nx, ny});
-                    visited[ny][nx] = true;
-                    parent[ny][nx][0] = x;
-                    parent[ny][nx][1] = y;
+                if (nx >= 0 && nx < WIDTH && ny >= 0 && ny < HEIGHT && !visited[floor][ny][nx] && dungeons[floor][ny][nx] != '#') {
+                    queue.add(new int[] {nx, ny, floor});
+                    visited[floor][ny][nx] = true;
+                    parent[floor][ny][nx][0] = x;
+                    parent[floor][ny][nx][1] = y;
 
-                    if (dungeons[currentFloor][ny][nx] == 'G') {
+                    if (dungeons[floor][ny][nx] == 'G') {
                         goalFound = true;
+                        goalFloor = floor;
                         goalX = nx;
                         goalY = ny;
                         break;
-                    } else if (!stairFound && dungeons[currentFloor][ny][nx] == 'U') {
-                        stairFound = true;
-                        stairX = nx;
-                        stairY = ny;
                     }
                 }
             }
-        }
 
-        int cx, cy;
+            if (!goalFound && dungeons[floor][y][x] == 'U' && floor < FLOORS - 1 && !visited[floor + 1][y][x]) {
+                queue.add(new int[] {x, y, floor + 1});
+                visited[floor + 1][y][x] = true;
+                parent[floor + 1][y][x][0] = x;
+                parent[floor + 1][y][x][1] = y;
+            } else if (!goalFound && dungeons[floor][y][x] == 'D' && floor > 0 && !visited[floor - 1][y][x]) {
+                queue.add(new int[] {x, y, floor - 1});
+                visited[floor - 1][y][x] = true;
+                parent[floor - 1][y][x][0] = x;
+                parent[floor - 1][y][x][1] = y;
+            }
+        }
 
         if (goalFound) {
-            cx = goalX;
-            cy = goalY;
-        } else if (stairFound) {
-            cx = stairX;
-            cy = stairY;
-        } else {
-            return path; // Empty path if no goal or stairs found
+            int cx = goalX, cy = goalY, cf = goalFloor;
+
+            while (cx != playerX || cy != playerY || cf != currentFloor) {
+                path.add(new int[] {cx, cy, cf});
+                int px = parent[cf][cy][cx][0];
+                int py = parent[cf][cy][cx][1];
+                if (px == cx && py == cy) {
+                    if (cf > currentFloor) cf--; else cf++;
+                } else {
+                    cx = px;
+                    cy = py;
+                }
+            }
+            Collections.reverse((LinkedList<int[]>) path);
         }
 
-        while (cx != playerX || cy != playerY) {
-            path.add(new int[]{cx, cy, currentFloor});
-            int px = parent[cy][cx][0];
-            int py = parent[cy][cx][1];
-            cx = px;
-            cy = py;
-        }
-        Collections.reverse((LinkedList<int[]>) path); // Reverse the path to start from the player
         return path;
     }
+
 
     private void autoPlayGame() {
         if (autoPath == null || autoPath.isEmpty()) {
@@ -415,7 +428,11 @@ public class DungeonCrawler extends JPanel {
             }
 
             if (nextFloor != currentFloor) {
-                changeFloor();
+                currentFloor = nextFloor;
+                playerX = nextX;
+                playerY = nextY;
+                dungeons[currentFloor][playerY][playerX] = 'P';
+                onStairTile = false;
                 autoPath = findShortestPathToGoal(); // Recalculate path after changing floor
                 return;
             }
@@ -447,6 +464,7 @@ public class DungeonCrawler extends JPanel {
         });
         timer.start();
     }
+
 
 
     private void showGameOverDialog() {
@@ -532,7 +550,7 @@ public class DungeonCrawler extends JPanel {
         int legendX = WIDTH * TILE_SIZE + 10;
         g.setColor(Color.WHITE);
         g.setFont(new Font("Arial", Font.BOLD, 25));
-        g.drawString("Current Floor: " + (currentFloor + 1), legendX, 300); // Display the current floor at the top-left corner
+        g.drawString("Current Floor: " + (currentFloor + 1), legendX, 750); // Display the current floor at the top-left corner
     }
 
     private void drawLegend(Graphics g) {
@@ -594,4 +612,3 @@ public class DungeonCrawler extends JPanel {
         });
     }
 }
-
