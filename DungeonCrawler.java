@@ -84,8 +84,11 @@ public class DungeonCrawler extends JPanel {
 
         // Add stairs between floors
         for (int f = 0; f < FLOORS - 1; f++) {
-            addStairs(dungeons[f], dungeons[f + 1]);
+            addStairs(dungeons[f], dungeons[f + 1], f == FLOORS - 2);
         }
+
+        // Add stairs down to the last floor
+        addStairs(dungeons[FLOORS - 1], null, true);
 
         // Start position on the selected floor
         currentFloor = PLAYER_START_FLOOR;
@@ -172,17 +175,21 @@ public class DungeonCrawler extends JPanel {
         }
     }
 
-    private void addStairs(char[][] currentDungeon, char[][] nextDungeon) {
+    private void addStairs(char[][] currentDungeon, char[][] nextDungeon, boolean isLastFloor) {
         Random rand = new Random();
         List<int[]> currentDeadEnds = findDeadEnds(currentDungeon);
-        List<int[]> nextDeadEnds = findDeadEnds(nextDungeon);
 
-        int[] upStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
-        int[] downStairs = nextDeadEnds.get(rand.nextInt(nextDeadEnds.size()));
+        int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+        currentDungeon[downStairs[1]][downStairs[0]] = 'D';
 
-        currentDungeon[upStairs[1]][upStairs[0]] = 'D';
-        nextDungeon[downStairs[1]][downStairs[0]] = 'U';
+        if (!isLastFloor) {
+            List<int[]> nextDeadEnds = findDeadEnds(nextDungeon);
+            int[] upStairs = nextDeadEnds.get(rand.nextInt(nextDeadEnds.size()));
+            nextDungeon[upStairs[1]][upStairs[0]] = 'U';
+        }
     }
+
+
 
 
     private boolean isReachable(char[][] dungeon, int startX, int startY, int goalX, int goalY) {
@@ -587,3 +594,4 @@ public class DungeonCrawler extends JPanel {
         });
     }
 }
+
