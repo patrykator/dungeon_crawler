@@ -181,24 +181,45 @@ public class DungeonCrawler extends JPanel {
         Random rand = new Random();
         List<int[]> currentDeadEnds = findDeadEnds(currentDungeon);
 
-        if (nextDungeon == null) {
-            // Last floor, only add down stairs
+        if (isLastFloor) {
+            // Ostatnie piętro, dodaj tylko schody w dół
             int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
             currentDungeon[downStairs[1]][downStairs[0]] = 'D';
         } else if (currentDungeon == dungeons[0]) {
-            // First floor, only add up stairs
+            // Pierwsze piętro, dodaj tylko schody w górę
             int[] upStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
             currentDungeon[upStairs[1]][upStairs[0]] = 'U';
         } else {
-            // General case, add both up and down stairs
+            // Przypadek ogólny, dodaj schody w dół na obecnym piętrze
             int[] downStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
             currentDungeon[downStairs[1]][downStairs[0]] = 'D';
 
+            // Dodaj schody w górę na następnym piętrze
             List<int[]> nextDeadEnds = findDeadEnds(nextDungeon);
             int[] upStairs = nextDeadEnds.get(rand.nextInt(nextDeadEnds.size()));
             nextDungeon[upStairs[1]][upStairs[0]] = 'U';
         }
+
+        // Dodaj schody w górę, jeśli jest to drugie piętro (indeksowanie od 0)
+        if (currentDungeon == dungeons[1] && !containsUpStairs(currentDungeon)) {
+            int[] upStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+            currentDungeon[upStairs[1]][upStairs[0]] = 'U';
+        }
     }
+
+    private boolean containsUpStairs(char[][] dungeon) {
+        for (int i = 0; i < dungeon.length; i++) {
+            for (int j = 0; j < dungeon[i].length; j++) {
+                if (dungeon[i][j] == 'U') {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+
+ 
 
 
 
