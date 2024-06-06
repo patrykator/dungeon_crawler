@@ -21,6 +21,9 @@ public class DungeonCrawler extends JPanel {
     private boolean gameWon;
     private boolean onStairTile;
     private boolean autoPlay;
+
+    private int previousFloor = PLAYER_START_FLOOR;
+
     private Queue<int[]> autoPath;
 
     public DungeonCrawler() {
@@ -96,12 +99,36 @@ public class DungeonCrawler extends JPanel {
         onStairTile = false;
     }
 
+    private List<int[]> findDeadEnds(char[][] dungeon) {
+        List<int[]> deadEnds = new ArrayList<>();
+        int[][] directions = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                if (dungeon[y][x] == '.') {
+                    int wallCount = 0;
+                    for (int[] dir : directions) {
+                        int nx = x + dir[0];
+                        int ny = y + dir[1];
+                        if (nx < 0 || nx >= WIDTH || ny < 0 || ny >= HEIGHT || dungeon[ny][nx] == '#') {
+                            wallCount++;
+                        }
+                    }
+                    if (wallCount == 3) {
+                        deadEnds.add(new int[] { x, y });
+                    }
+                }
+            }
+        }
+
+        return deadEnds;
+    }
+
     private void generateDungeon(char[][] dungeon, boolean isGoalFloor) {
         for (int y = 0; y < HEIGHT; y++) {
             Arrays.fill(dungeon[y], '#');
         }
 
-        // Use DFS to generate a maze
         Stack<int[]> stack = new Stack<>();
         Random rand = new Random();
 
@@ -110,9 +137,7 @@ public class DungeonCrawler extends JPanel {
         stack.push(new int[]{startX, startY});
         dungeon[startY][startX] = '.';
 
-        int[][] directions = {
-                {0, 1}, {1, 0}, {0, -1}, {-1, 0}
-        };
+        int[][] directions = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
 
         while (!stack.isEmpty()) {
             int[] current = stack.peek();
@@ -139,7 +164,6 @@ public class DungeonCrawler extends JPanel {
         }
 
         if (isGoalFloor) {
-            // Ensure goal position is reachable and not the same as the player's starting position
             do {
                 goalX = rand.nextInt(WIDTH);
                 goalY = rand.nextInt(HEIGHT);
@@ -150,22 +174,16 @@ public class DungeonCrawler extends JPanel {
 
     private void addStairs(char[][] currentDungeon, char[][] nextDungeon) {
         Random rand = new Random();
-        int upX, upY, downX, downY;
+        List<int[]> currentDeadEnds = findDeadEnds(currentDungeon);
+        List<int[]> nextDeadEnds = findDeadEnds(nextDungeon);
 
-        // Ensure stairs up and down are reachable on current dungeon
-        do {
-            upX = rand.nextInt(WIDTH);
-            upY = rand.nextInt(HEIGHT);
-        } while (currentDungeon[upY][upX] != '.' || !isReachable(currentDungeon, playerX, playerY, upX, upY));
-        currentDungeon[upY][upX] = 'D';
+        int[] upStairs = currentDeadEnds.get(rand.nextInt(currentDeadEnds.size()));
+        int[] downStairs = nextDeadEnds.get(rand.nextInt(nextDeadEnds.size()));
 
-        // Ensure stairs up and down are reachable on next dungeon
-        do {
-            downX = rand.nextInt(WIDTH);
-            downY = rand.nextInt(HEIGHT);
-        } while (nextDungeon[downY][downX] != '.' || !isReachable(nextDungeon, downX, downY, downX, downY));
-        nextDungeon[downY][downX] = 'U';
+        currentDungeon[upStairs[1]][upStairs[0]] = 'D';
+        nextDungeon[downStairs[1]][downStairs[0]] = 'U';
     }
+
 
     private boolean isReachable(char[][] dungeon, int startX, int startY, int goalX, int goalY) {
         boolean[][] visited = new boolean[HEIGHT][WIDTH];
@@ -229,8 +247,9 @@ public class DungeonCrawler extends JPanel {
 
             if (destination == '#') return;
 
-            if (!onStairTile) {
-                dungeons[currentFloor][playerY][playerX] = '.';
+            // Zmieniamy poprzednią pozycję na 'T' (traveled path) tylko jeśli to 'P' (player)
+            if (dungeons[currentFloor][playerY][playerX] == 'P' && !onStairTile) {
+                dungeons[currentFloor][playerY][playerX] = 'T';
             }
 
             playerX = newX;
@@ -245,10 +264,16 @@ public class DungeonCrawler extends JPanel {
             }
 
             if (!onStairTile) {
-                dungeons[currentFloor][playerY][playerX] = 'P';
+                dungeons[currentFloor][playerY][playerX] = 'P'; // Update player's new position
             }
         }
+
+        repaint(); // Ensure the component is repainted after every move
     }
+
+
+
+
 
     private void changeFloor() {
         char tile = dungeons[currentFloor][playerY][playerX];
@@ -256,6 +281,13 @@ public class DungeonCrawler extends JPanel {
             currentFloor++;
         } else if (tile == 'D' && currentFloor > 0) {
             currentFloor--;
+        }
+
+        // Zmieniamy poprzednią pozycję gracza na 'T' tylko, jeśli nie wchodzimy po raz pierwszy na nowe piętro
+        if (previousFloor == currentFloor) {
+            dungeons[previousFloor][playerY][playerX] = 'T';
+        } else {
+            previousFloor = currentFloor;
         }
 
         do {
@@ -271,6 +303,9 @@ public class DungeonCrawler extends JPanel {
             autoPath = findShortestPathToGoal();
         }
     }
+
+
+
 
     private Queue<int[]> findShortestPathToGoal() {
         Queue<int[]> path = new LinkedList<>();
@@ -347,7 +382,7 @@ public class DungeonCrawler extends JPanel {
             return;
         }
 
-        javax.swing.Timer timer = new javax.swing.Timer(100, e -> {
+        javax.swing.Timer timer = new javax.swing.Timer(20, e -> {
             if (autoPath.isEmpty()) {
                 ((javax.swing.Timer) e.getSource()).stop();
                 if (gameWon) {
@@ -366,6 +401,11 @@ public class DungeonCrawler extends JPanel {
             int nextX = nextStep[0];
             int nextY = nextStep[1];
             int nextFloor = nextStep[2];
+
+            // Update the previous position to 'T' before moving the player
+            if (!onStairTile) {
+                dungeons[currentFloor][playerY][playerX] = 'T';
+            }
 
             if (nextFloor != currentFloor) {
                 changeFloor();
@@ -400,6 +440,7 @@ public class DungeonCrawler extends JPanel {
         });
         timer.start();
     }
+
 
     private void showGameOverDialog() {
         int option = JOptionPane.showOptionDialog(this,
@@ -462,6 +503,9 @@ public class DungeonCrawler extends JPanel {
                     case 'D':
                         g.setColor(Color.PINK); // Stairs down in pink
                         break;
+                    case 'T':
+                        g.setColor(Color.CYAN); // Traveled path in cyan
+                        break;
                 }
                 g.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             }
@@ -473,6 +517,9 @@ public class DungeonCrawler extends JPanel {
         // Draw legend
         drawLegend(g);
     }
+
+
+
 
     private void drawFloorCounter(Graphics g) {
         int legendX = WIDTH * TILE_SIZE + 10;
@@ -517,7 +564,14 @@ public class DungeonCrawler extends JPanel {
         g.fillRect(legendX, 240, TILE_SIZE, TILE_SIZE);
         g.setColor(Color.WHITE);
         g.drawString("Stairs Down", legendX + TILE_SIZE + 10, 260);
+
+        g.setColor(Color.CYAN);
+        g.fillRect(legendX, 280, TILE_SIZE, TILE_SIZE);
+        g.setColor(Color.WHITE);
+        g.drawString("Traveled Path", legendX + TILE_SIZE + 10, 300);
+
     }
+
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
